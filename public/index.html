@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Coffee Rating</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: linear-gradient(135deg, #fff7ed, #f5ebe0);
+      min-height: 100vh; color: #3b2a20; padding: 24px 16px;
+    }
+    .container { max-width: 1000px; margin: 0 auto; }
+    h1 { text-align: center; color: #7c4a2d; margin-bottom: 18px; }
+    .layout { display: grid; gap: 20px; grid-template-columns: 1fr; }
+    @media (min-width: 800px) { .layout { grid-template-columns: 2fr 1fr; align-items: start; } }
+    #search {
+      width: 100%; padding: 12px; border: 1px solid #d6c2b2; border-radius: 10px;
+      font: inherit; margin-bottom: 14px; outline: none;
+    }
+    #search:focus { border-color: #a0643c; box-shadow: 0 0 0 3px #f1dfd0; }
+    #grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+    .item, .board {
+      background: #fff; border-radius: 14px; padding: 16px;
+      box-shadow: 0 4px 14px rgba(124, 74, 45, .12);
+    }
+    .item h3 { margin-bottom: 4px; }
+    .origin { color: #a0643c; font-size: .85rem; margin-bottom: 6px; }
+    .notes { color: #6b5a4e; font-size: .9rem; margin-bottom: 12px; }
+    .row { display: flex; justify-content: space-between; align-items: center; }
+    .votes { font-weight: 700; }
+    .vote-btn {
+      border: none; background: #7c4a2d; color: #fff; font: inherit; font-weight: 600;
+      padding: 8px 14px; border-radius: 10px; cursor: pointer; transition: transform .1s;
+    }
+    .vote-btn:active { transform: scale(.95); }
+    .board h2 { margin-bottom: 10px; color: #7c4a2d; font-size: 1.1rem; }
+    .board ol { padding-left: 22px; display: grid; gap: 8px; }
+    .board li span { float: right; font-weight: 700; }
+    .empty, .error { text-align: center; padding: 16px; color: #6b5a4e; }
+    .error { color: #b91c1c; }
+    .bump { animation: bump .3s; }
+    @keyframes bump { 50% { transform: scale(1.3); } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>☕ Coffee Rating</h1>
+    <div class="layout">
+      <section>
+        <input id="search" type="search" placeholder="Search coffee blends..." />
+        <div id="message" class="error" hidden></div>
+        <div id="grid"></div>
+      </section>
+      <aside class="board">
+        <h2>🏆 Top Rated</h2>
+        <ol id="leaderboard"></ol>
+      </aside>
+    </div>
+  </div>
+
+  <script>
+    const grid = document.getElementById("grid");
+    const board = document.getElementById("leaderboard");
+    const search = document.getElementById("search");
+    const message = document.getElementById("message");
+
+    function showError(text) {
+      message.textContent = text || "";
+      message.hidden = !text;
+    }
+
+    function itemEl(c) {
+      const div = document.createElement("div");
+      div.className = "item";
+      div.dataset.id = c.id;
+
+      const h3 = document.createElement("h3");
+      h3.textContent = c.name;
+      const origin = document.createElement("div");
+      origin.className = "origin";
+      origin.textContent = c.origin || "";
+      const notes = document.createElement("p");
+      notes.className = "notes";
+      notes.textContent = (c.roast ? c.roast + " roast" : "") + (c.rating ? "  ·  ⭐ " + c.rating : "");
+
+      const row = document.createElement("div");
+      row.className = "row";
+      const votes = document.createElement("span");
+      votes.className = "votes";
+      votes.textContent = "👍 " + c.votes;
+      const btn = document.createElement("button");
+      btn.className = "vote-btn";
+      btn.textContent = "Vote";
+      btn.addEventListener("click", () => vote(c.id, votes));
+
+      row.append(votes, btn);
+      div.append(h3, origin, notes, row);
+      return div;
+    }
+
+    async function loadCoffees() {
+      try {
+        const res = await fetch("/coffees?search=" + encodeURIComponent(search.value));
+        if (!res.ok) throw new Error("Failed to load coffees");
+        const items = await res.json();
+        grid.innerHTML = "";
+        if (!items.length) {
+          grid.innerHTML = '<div class="empty">No coffees found.</div>';
+        } else {
+          items.forEach((c) => grid.appendChild(itemEl(c)));
+        }
+        showError("");
+      } catch (err) {
+        showError(err.message);
+      }
+    }
+
+    async function loadLeaderboard() {
+      try {
+        const res = await fetch("/leaderboard");
+        const items = await res.json();
+        board.innerHTML = "";
+        items.forEach((c) => {
+          const li = document.createElement("li");
+          li.textContent = c.name + " ";
+          const span = document.createElement("span");
+          span.textContent = c.votes;
+          li.appendChild(span);
+          board.appendChild(li);
+        });
+      } catch {
+        board.innerHTML = "<li>Could not load leaderboard</li>";
+      }
+    }
+
+    // Update only the clicked item and the leaderboard (no page refresh)
+    async function vote(id, votesEl) {
+      try {
+        const res = await fetch("/coffees/" + id + "/vote", { method: "POST" });
+        if (!res.ok) throw new Error("Could not register vote");
+        const coffee = await res.json();
+        votesEl.textContent = "👍 " + coffee.votes;
+        votesEl.classList.remove("bump");
+        void votesEl.offsetWidth;
+        votesEl.classList.add("bump");
+        showError("");
+        loadLeaderboard();
+      } catch (err) {
+        showError(err.message);
+      }
+    }
+
+    let timer;
+    search.addEventListener("input", () => {
+      clearTimeout(timer);
+      timer = setTimeout(loadCoffees, 250);
+    });
+
+    loadCoffees();
+    loadLeaderboard();
+    setInterval(loadLeaderboard, 5000); // live-ish updates from other voters
+  </script>
+</body>
+</html>
